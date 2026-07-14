@@ -1,0 +1,6 @@
+flask
+flask-bcrypt
+flask-wtf
+flask-limiter
+flask-session
+wtforms

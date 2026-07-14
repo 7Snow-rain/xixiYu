@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>帮助中心</title>
+</head>
+<body>
+    <h3>📖 帮助中心</h3>
+    <hr>
+    <h5>用户管理</h5>
+    <ul>
+        <li><strong>登录：</strong>输入用户名、密码及验证码进行登录。验证码为简单的数学运算。</li>
+        <li><strong>修改密码：</strong>登录后可在"修改密码"页面更改您的密码。新密码需包含大小写字母、数字及特殊字符。</li>
+        <li><strong>退出：</strong>点击"退出"按钮安全退出系统。</li>
+    </ul>
+    <h5>安全机制</h5>
+    <ul>
+        <li>密码使用 bcrypt 加盐哈希存储，不保存明文</li>
+        <li>同一 IP 连续 5 次登录失败将被锁定 15 分钟</li>
+        <li>登录接口频率限制：5 次/分钟</li>
+        <li>所有表单受 CSRF 令牌保护</li>
+        <li>Session 使用 HttpOnly + SameSite 安全配置</li>
+    </ul>
+    <h5>动态页面</h5>
+    <p>系统支持动态加载页面内容。您可以通过 <code>/page?name=页面名称</code> 的方式加载 pages/ 目录下的文件。</p>
+    <p>示例：<a href="/page?name=help">/page?name=help</a></p>
+</body>
+</html>
