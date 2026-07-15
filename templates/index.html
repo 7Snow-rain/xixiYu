@@ -98,6 +98,29 @@
             </div>
         </div>
 
+        <!-- URL 抓取功能 -->
+        <div class="card">
+            <div class="card-header">
+                <h4>🌐 URL 抓取</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('fetch_url') }}">
+                    <div class="mb-3">
+                        <label for="url" class="form-label">输入 URL：</label>
+                        <input type="text" class="form-control" id="url" name="url" placeholder="http://example.com" value="{{ session.get('fetch_url', '') }}">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-info">🔍 抓取</button>
+                    </div>
+                </form>
+                {% if session.get('fetch_result') %}
+                <hr>
+                <h6>📋 抓取结果：</h6>
+                <pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;">{{ session.get('fetch_result', '') }}</pre>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- 动态页面内容显示区域 -->
         {% if page_content %}
         <div class="page-content">
