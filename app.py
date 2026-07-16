@@ -2,8 +2,8 @@ import os
 import re
 import logging
 import secrets
-import urllib.request
-import urllib.error
+import subprocess
+import platform
 from html import escape
 from datetime import datetime, timedelta
 
@@ -261,163 +261,6 @@ def change_password():
     return render_template("change_password.html", form=form)
 
 # ==========================================
-# URL 抓取功能（SSRF 安全加固版本）
-# ==========================================
-import ipaddress
-import socket
-
-# 禁止访问的内部 IP 范围（IPv4）
-BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),       # 本地回环
-    ipaddress.ip_network("10.0.0.0/8"),         # 私有 A 类
-    ipaddress.ip_network("172.16.0.0/12"),      # 私有 B 类
-    ipaddress.ip_network("192.168.0.0/16"),     # 私有 C 类
-    ipaddress.ip_network("0.0.0.0/8"),          # 零地址
-    ipaddress.ip_network("100.64.0.0/10"),      # 运营商级 NAT
-    ipaddress.ip_network("169.254.0.0/16"),     # 链路本地
-    ipaddress.ip_network("198.18.0.0/15"),      # 基准测试
-    ipaddress.ip_network("224.0.0.0/4"),        # 组播地址
-    ipaddress.ip_network("240.0.0.0/4"),        # 保留地址
-    ipaddress.ip_network("255.255.255.255/32"), # 广播地址
-]
-
-# IPv6 禁止范围
-BLOCKED_NETWORKS_V6 = [
-    ipaddress.ip_network("::1/128"),            # 本地回环
-    ipaddress.ip_network("fe80::/10"),           # 链路本地
-    ipaddress.ip_network("fc00::/7"),            # 唯一本地地址
-    ipaddress.ip_network("ff00::/8"),            # 组播地址
-]
-
-
-def is_internal_ip(host):
-    """检查目标主机是否为内部 IP（SSRF 防护）"""
-    try:
-        addr = ipaddress.ip_address(host)
-        for net in BLOCKED_NETWORKS:
-            if addr in net:
-                return True
-        for net in BLOCKED_NETWORKS_V6:
-            if addr in net:
-                return True
-        return False
-    except ValueError:
-        # 主机名而非 IP，需要 DNS 解析后检查
-        return None  # 不确定，需要后续解析
-
-
-def resolve_and_check(hostname):
-    """解析域名并检查所有解析结果是否含有内网地址"""
-    try:
-        results = socket.getaddrinfo(hostname, None)
-        for res in results:
-            addr = ipaddress.ip_address(res[4][0])
-            for net in BLOCKED_NETWORKS:
-                if addr in net:
-                    return True
-            for net in BLOCKED_NETWORKS_V6:
-                if addr in net:
-                    return True
-        return False
-    except Exception:
-        return True  # 解析失败，保守起见拒绝
-
-
-@app.route("/fetch-url", methods=["POST"])
-@csrf.exempt
-def fetch_url():
-    if "username" not in session:
-        return redirect(url_for("login"))
-
-    url = request.form.get("url", "").strip()
-    if not url:
-        flash("请输入 URL", "warning")
-        return redirect(url_for("index"))
-
-    # 安全校验：只允许 http:// 和 https:// 协议
-    # 禁止 file://, ftp://, dict://, gopher://, jar: 等危险协议
-    if not url.startswith("http://") and not url.startswith("https://"):
-        err_msg = f"不支持的协议。仅允许 http:// 和 https://"
-        session["fetch_result"] = f"错误: {err_msg}"
-        session["fetch_url"] = url
-        audit_log("FETCH_URL_REJECTED_PROTOCOL", f"url={url}")
-        flash(err_msg, "danger")
-        return redirect(url_for("index"))
-
-    # URL 解析与目标主机提取
-    from urllib.parse import urlparse
-    parsed = urlparse(url)
-    host = parsed.hostname
-    
-    if not host:
-        session["fetch_result"] = "错误: 无效的 URL"
-        session["fetch_url"] = url
-        flash("无效的 URL", "danger")
-        return redirect(url_for("index"))
-
-    # SSRF 防护 1：检查是否是已知内部 IP 地址
-    if is_internal_ip(host) is True:
-        err_msg = f"拒绝访问内部地址: {host}"
-        session["fetch_result"] = f"错误: {err_msg}"
-        session["fetch_url"] = url
-        audit_log("SSRF_BLOCKED_IP", f"url={url} host={host}")
-        flash(err_msg, "danger")
-        return redirect(url_for("index"))
-
-    # SSRF 防护 2：如果是域名，解析并检查
-    if is_internal_ip(host) is None:
-        if resolve_and_check(host):
-            err_msg = f"拒绝访问目标: {host}（解析到内网地址）"
-            session["fetch_result"] = f"错误: {err_msg}"
-            session["fetch_url"] = url
-            audit_log("SSRF_BLOCKED_DOMAIN", f"url={url} host={host}")
-            flash(err_msg, "danger")
-            return redirect(url_for("index"))
-
-    # SSRF 防护 3：限制重定向目标也为外网地址
-    class SSRFRedirectHandler(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
-            new_parsed = urlparse(newurl)
-            new_host = new_parsed.hostname
-            if new_host:
-                if is_internal_ip(new_host) is True:
-                    raise urllib.error.HTTPError(newurl, code, "SSRF Blocked: redirect to internal IP", headers, None)
-                if is_internal_ip(new_host) is None:
-                    if resolve_and_check(new_host):
-                        raise urllib.error.HTTPError(newurl, code, "SSRF Blocked: redirect resolves to internal", headers, None)
-            return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-    try:
-        opener = urllib.request.build_opener(SSRFRedirectHandler)
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-        response = opener.open(req, timeout=10)
-        status_code = response.getcode()
-        content = response.read().decode("utf-8", errors="replace")
-        result_text = f"状态码: {status_code}\n\n--- 响应内容 (前5000字符) ---\n\n{content[:5000]}"
-        session["fetch_result"] = result_text
-        session["fetch_url"] = url
-        audit_log("FETCH_URL", f"url={url} status={status_code}")
-        flash(f"抓取成功！状态码: {status_code}", "success")
-    except urllib.error.HTTPError as e:
-        try:
-            error_content = e.read().decode("utf-8", errors="replace")
-            result_text = f"HTTP 错误 - 状态码: {e.code}\n\n--- 响应内容 (前5000字符) ---\n\n{error_content[:5000]}"
-        except Exception:
-            result_text = f"HTTP 错误 - 状态码: {e.code}"
-        session["fetch_result"] = result_text
-        session["fetch_url"] = url
-        audit_log("FETCH_URL_ERROR", f"url={url} status={e.code}")
-        flash(f"HTTP 错误: {e.code}", "danger")
-    except Exception as e:
-        session["fetch_result"] = f"错误: {str(e)}"
-        session["fetch_url"] = url
-        audit_log("FETCH_URL_EXCEPTION", f"url={url} error={str(e)}")
-        flash(f"请求失败: {str(e)}", "danger")
-
-    return redirect(url_for("index"))
-
-
-# ==========================================
 # 修复后的密码修改接口（CSRF 保护 + XSS 防护）
 # ==========================================
 @app.route("/change-password", methods=["POST"])
@@ -509,6 +352,43 @@ def dynamic_page():
     session["page_content"] = page_content
     audit_log("PAGE_VIEW", f"name={name}")
     return redirect(url_for("index"))
+
+
+# ==========================================
+# Ping 网络诊断功能（含命令注入漏洞，需修复）
+# ==========================================
+@app.route("/ping", methods=["GET", "POST"])
+def ping():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    result = None
+    if request.method == "POST":
+        ip = request.form.get("ip", "").strip()
+        # 安全修复：校验 IP 地址或域名格式，防止命令注入
+        import re as _re
+        # 检查是否为合法 IP 地址 (IPv4) 或合法域名
+        ip_pattern = r"^(\d{1,3}\.){3}\d{1,3}$"
+        domain_pattern = r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$"
+        is_ip = bool(_re.match(ip_pattern, ip))
+        is_domain = bool(_re.match(domain_pattern, ip))
+        if not is_ip and not is_domain:
+            result = "错误：请输入有效的 IP 地址或域名"
+            audit_log("PING_INVALID_INPUT", f"ip={ip}")
+        else:
+            # 安全修复：使用列表参数方式执行命令，不使用 shell=True
+            try:
+                output = subprocess.check_output(["ping", "-c", "3", ip], timeout=30, stderr=subprocess.STDOUT)
+                result = output.decode("utf-8", errors="replace")
+            except subprocess.CalledProcessError as e:
+                result = e.output.decode("utf-8", errors="replace")
+            except subprocess.TimeoutExpired:
+                result = "Ping 命令执行超时（30秒）"
+            except Exception as e:
+                result = f"执行出错: {str(e)}"
+            audit_log("PING_EXEC", f"ip={ip}")
+
+    return render_template("ping.html", result=result)
 
 
 # ---------------------------

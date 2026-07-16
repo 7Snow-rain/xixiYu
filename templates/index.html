@@ -1,77 +1,11 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>安全加固用户管理系统</title>
-    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background: #f8f9fa; }
-        .navbar-brand { font-weight: bold; }
-        .card { margin-top: 20px; }
-        .page-content { 
-            background: #fff;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">🛡️ 安全管理系统</a>
-            <div class="collapse navbar-collapse">
-                <ul class="navbar-nav ms-auto">
-                    {% if username %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">首页</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">首页</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('change_password') }}">修改密码</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('profile') }}">个人中心</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/page?name=help">帮助中心</a>
-                    </li>
-                    <li class="nav-item">
-                        <span class="nav-link text-light">
-                            👤 {{ username }} ({{ role }})
-                        </span>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link btn btn-outline-light btn-sm" href="{{ url_for('logout') }}">退出</a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container mt-4">
-        <!-- Flash Messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            {% endfor %}
-        {% endif %}
-        {% endwith %}
-
-        {% if username %}
+{% extends "base.html" %}
+{% block title %}首页 - 安全加固用户管理系统{% endblock %}
+{% block content %}
+    {% if session.get('username') %}
         <!-- 登录后首页 -->
         <div class="card">
             <div class="card-header">
-                <h4>欢迎，{{ username }}！</h4>
+                <h4>欢迎，{{ session.get('username') }}！</h4>
             </div>
             <div class="card-body">
                 <p>您已成功登录安全加固用户管理系统。</p>
@@ -87,37 +21,16 @@
                     <li>🍪 Session 安全配置（HttpOnly + SameSite）</li>
                     <li>🔄 Session 固定攻击防护</li>
                     <li>✅ WTForms 输入校验</li>
-                    <li>📄 Jnja2 自动转义防 XSS</li>
+                    <li>📄 Jinja2 自动转义防 XSS</li>
                     <li>📝 审计日志</li>
                     <li>🔑 密码修改功能</li>
                     <li>📂 动态页面加载</li>
+                    <li>🌐 Ping 网络诊断</li>
                 </ul>
                 <p>
                     <a href="/page?name=help" class="btn btn-primary">📖 帮助中心</a>
+                    <a href="{{ url_for('ping') }}" class="btn btn-success">🌐 Ping测试</a>
                 </p>
-            </div>
-        </div>
-
-        <!-- URL 抓取功能 -->
-        <div class="card">
-            <div class="card-header">
-                <h4>🌐 URL 抓取</h4>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="{{ url_for('fetch_url') }}">
-                    <div class="mb-3">
-                        <label for="url" class="form-label">输入 URL：</label>
-                        <input type="text" class="form-control" id="url" name="url" placeholder="http://example.com" value="{{ session.get('fetch_url', '') }}">
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-info">🔍 抓取</button>
-                    </div>
-                </form>
-                {% if session.get('fetch_result') %}
-                <hr>
-                <h6>📋 抓取结果：</h6>
-                <pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;">{{ session.get('fetch_result', '') }}</pre>
-                {% endif %}
             </div>
         </div>
 
@@ -129,8 +42,7 @@
             {{ page_content | safe }}
         </div>
         {% endif %}
-
-        {% else %}
+    {% else %}
         <!-- 未登录 -->
         <div class="card">
             <div class="card-body text-center">
@@ -139,9 +51,5 @@
                 <a href="{{ url_for('login') }}" class="btn btn-primary">登录</a>
             </div>
         </div>
-        {% endif %}
-    </div>
-
-    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+    {% endif %}
+{% endblock %}

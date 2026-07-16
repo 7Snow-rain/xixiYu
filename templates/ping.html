@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Ping测试 - 网络诊断{% endblock %}
+{% block extra_head %}
+<style>
+    .ping-form { margin: 20px 0; }
+    .ping-form .input-group { max-width: 500px; }
+    .ping-btn { min-width: 100px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h4>🌐 Ping 网络诊断</h4>
+    </div>
+    <div class="card-body">
+        <p class="text-muted">输入IP地址或域名进行Ping测试。</p>
+        <form method="POST" action="{{ url_for('ping') }}" class="ping-form">
+            <div class="input-group mb-3">
+                <input type="text" name="ip" class="form-control" placeholder="例如: 8.8.8.8 或 baidu.com" required>
+                <button type="submit" class="btn btn-success ping-btn">Ping</button>
+            </div>
+        </form>
+        <hr>
+        <h5>📋 执行结果</h5>
+        <div class="console-output">
+            {% if result %}
+{{ result }}
+            {% else %}
+等待执行 Ping 命令...
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
