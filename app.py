@@ -1,11 +1,14 @@
 import os
 import re
+import json
 import logging
 import secrets
 import subprocess
 import platform
+import random
 from html import escape
 from datetime import datetime, timedelta
+import xml.etree.ElementTree as ET
 
 from flask import (
     Flask,
@@ -153,7 +156,6 @@ def inject_globals():
 # Generate Captcha Math
 # ---------------------------
 def generate_captcha():
-    import random
     a = random.randint(1, 20)
     b = random.randint(1, 20)
     op = random.choice(["+", "-"])
@@ -389,6 +391,111 @@ def ping():
             audit_log("PING_EXEC", f"ip={ip}")
 
     return render_template("ping.html", result=result)
+
+
+# ==========================================
+# XML 数据导入功能（含 XXE 漏洞演示 - 学生实训用）
+# ==========================================
+def unsafe_parse_xml_with_xxe(xml_data):
+    """
+    不安全解析 XML：支持外部实体引用（XXE 漏洞）
+    仅用于安全实训演示
+    """
+    # 1. 检测 <!ENTITY 和 SYSTEM 关键字，提取文件路径
+    entity_pattern = re.compile(r'<!ENTITY\\s+\\w+\\s+SYSTEM\\s+["\']([^"\']+)["\']>')
+    entity_refs = {}
+    file_path = None
+
+    match = entity_pattern.search(xml_data)
+    if match:
+        file_path = match.group(1)
+        entity_name_match = re.search(r'<!ENTITY\\s+(\\w+)\\s+SYSTEM', xml_data)
+        if entity_name_match:
+            entity_refs[entity_name_match.group(1)] = file_path
+
+    # 2. 如果检测到外部实体引用，读取文件内容
+    if file_path:
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                file_content = f.read()
+        except Exception:
+            file_content = f"[ERROR: 无法读取文件 {file_path}]"
+
+        # 3. 替换实体引用
+        for entity_name, _ in entity_refs.items():
+            xml_data = xml_data.replace(f'&{entity_name};', file_content)
+
+    # 4. 解析替换后的 XML
+    try:
+        root = ET.fromstring(xml_data)
+        users = []
+        for user_elem in root.findall('user'):
+            user_data = {}
+            name_elem = user_elem.find('name')
+            email_elem = user_elem.find('email')
+            if name_elem is not None:
+                user_data['name'] = name_elem.text or ''
+            if email_elem is not None:
+                user_data['email'] = email_elem.text or ''
+            if user_data:
+                users.append(user_data)
+        return {"success": True, "data": users, "file_read": file_path}
+    except ET.ParseError as e:
+        return {"success": False, "error": f"XML 解析失败: {str(e)}"}
+
+
+@app.route("/xml-import", methods=["GET", "POST"])
+def xml_import():
+    if "username" not in session:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        xml_data = request.form.get("xml_data", "")
+        if not xml_data.strip():
+            return jsonify({"success": False, "error": "XML 数据不能为空"})
+
+        result = unsafe_parse_xml_with_xxe(xml_data)
+        audit_log("XML_IMPORT", f"result={json.dumps(result, ensure_ascii=False)[:200]}")
+        return jsonify(result)
+
+    return render_template("xml_import.html")
+
+
+# ==========================================
+# 【XXE 漏洞修复版】XML 数据导入（禁用外部实体）
+# ==========================================
+def safe_parse_xml(xml_data):
+    """
+    安全解析 XML：禁用外部实体引用，防止 XXE 攻击
+    修复方案：
+    1. 使用 DefusedXML 或设置解析器禁止外部实体
+    2. 过滤 XML 中的 <!DOCTYPE 和 <!ENTITY 声明
+    3. 对解析结果做合法性校验
+    """
+    # 修复方式 1：检查并拒绝包含 DOCTYPE 和 ENTITY 的 XML
+    if re.search(r'<!DOCTYPE\\s+', xml_data, re.IGNORECASE) or re.search(r'<!ENTITY\\s+', xml_data, re.IGNORECASE):
+        return {"success": False, "error": "安全策略：XML 中不允许使用 DOCTYPE 或 ENTITY 声明（防止 XXE 攻击）"}
+
+    # 修复方式 2：使用配置安全的解析器
+    parser = ET.XMLParser()
+    # Python 3.8+ 默认禁止外部实体，显式确保安全
+    # 使用 fromstring 的默认限制
+    try:
+        root = ET.fromstring(xml_data, parser=parser)
+        users = []
+        for user_elem in root.findall('user'):
+            user_data = {}
+            name_elem = user_elem.find('name')
+            email_elem = user_elem.find('email')
+            if name_elem is not None:
+                user_data['name'] = escape(name_elem.text or '')
+            if email_elem is not None:
+                user_data['email'] = escape(email_elem.text or '')
+            if user_data:
+                users.append(user_data)
+        return {"success": True, "data": users, "xxe_protected": True}
+    except ET.ParseError as e:
+        return {"success": False, "error": f"XML 解析失败: {str(e)}"}
 
 
 # ---------------------------
